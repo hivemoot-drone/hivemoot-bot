@@ -4,6 +4,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { isLLMConfigured, getLLMConfig, createModel, createModelFromEnv, getLLMReadiness } from "./provider.js";
 import { _resetMasterKeysCache } from "./byok.js";
 import type { LLMConfig, LLMProvider } from "./types.js";
+import { logger } from "../logger.js";
 
 vi.mock("@openrouter/ai-sdk-provider", async () => {
   const actual = await vi.importActual<typeof import("@openrouter/ai-sdk-provider")>("@openrouter/ai-sdk-provider");
@@ -534,7 +535,7 @@ describe("LLM Provider", () => {
       process.env.LLM_MODEL = "claude-3-haiku";
       delete process.env.ANTHROPIC_API_KEY;
 
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 
       const result = await createModelFromEnv();
 
