@@ -950,45 +950,62 @@ export function app(probotApp: Probot): void {
 
       if (!repoConfig.governance.pr) return;
 
+      // Conclusions that indicate a check definitively failed. For passing
+      // conclusions (success/neutral/skipped) a check_run.completed may fire
+      // while other checks in the same suite are still in progress. Calling
+      // evaluateMergeReadiness at that point causes isCIPassing() to see
+      // in-progress runs and spuriously remove the merge-ready label (flap).
+      // Defer to check_suite.completed for the authoritative evaluation once
+      // the full suite finishes. Only act immediately when a check fails.
+      const FAILING_CONCLUSIONS = new Set([
+        "failure", "cancelled", "timed_out", "action_required", "startup_failure",
+      ]);
+      const isDefinitelyFailing = FAILING_CONCLUSIONS.has(context.payload.check_run.conclusion ?? "");
+
       const errors: Error[] = [];
       for (const pr of pull_requests) {
         try {
           const prRef = { owner, repo, prNumber: pr.number };
-          context.log.info(`Evaluating merge-readiness for PR #${pr.number} after check_run in ${fullName}`);
           const currentLabels = await prs.getLabels({ owner, repo, prNumber: pr.number });
-          await evaluateMergeReadiness({
-            prs,
-            ref: prRef,
-            config: repoConfig.governance.pr.mergeReady,
-            trustedReviewers: repoConfig.governance.pr.trustedReviewers,
-            currentLabels,
-            headSha,
-            log: context.log,
-          });
-          // CheckRunPullRequest omits draft and mergeable; fetch from REST so the
-          // automerge gates can fire correctly on CI completion events.
-          let prDraft: boolean | undefined;
-          let prMergeable: boolean | null | undefined;
-          let checkRunPRNodeId: string | undefined;
-          if (repoConfig.governance.pr.automerge) {
-            const prState = await prs.get(prRef);
-            prDraft = prState.draft;
-            prMergeable = prState.mergeable;
-            checkRunPRNodeId = prState.nodeId;
+
+          if (isDefinitelyFailing) {
+            context.log.info(`Evaluating merge-readiness for PR #${pr.number} after failing check_run in ${fullName}`);
+            await evaluateMergeReadiness({
+              prs,
+              ref: prRef,
+              config: repoConfig.governance.pr.mergeReady,
+              trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+              currentLabels,
+              headSha,
+              log: context.log,
+            });
+            // CheckRunPullRequest omits draft and mergeable; fetch from REST so the
+            // automerge gates can fire correctly on CI completion events.
+            let prDraft: boolean | undefined;
+            let prMergeable: boolean | null | undefined;
+            let checkRunPRNodeId: string | undefined;
+            if (repoConfig.governance.pr.automerge) {
+              const prState = await prs.get(prRef);
+              prDraft = prState.draft;
+              prMergeable = prState.mergeable;
+              checkRunPRNodeId = prState.nodeId;
+            }
+            await evaluateAutomerge({
+              prs,
+              ref: prRef,
+              config: repoConfig.governance.pr.automerge,
+              trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+              nodeId: checkRunPRNodeId,
+              currentLabels,
+              headSha,
+              draft: prDraft,
+              mergeable: prMergeable,
+              log: context.log,
+              graphql: context.octokit,
+            });
           }
-          await evaluateAutomerge({
-            prs,
-            ref: prRef,
-            config: repoConfig.governance.pr.automerge,
-            trustedReviewers: repoConfig.governance.pr.trustedReviewers,
-            nodeId: checkRunPRNodeId,
-            currentLabels,
-            headSha,
-            draft: prDraft,
-            mergeable: prMergeable,
-            log: context.log,
-            graphql: context.octokit,
-          });
+          // For passing conclusions, check_suite.completed handles the final
+          // merge-readiness evaluation once all checks in the suite complete.
 
           if (currentLabels.some((label) => isLabelMatch(label, LABELS.SQUASH_QUEUED))) {
             context.log.info(`Retrying queued squash for PR #${pr.number} after check_run in ${fullName}`);

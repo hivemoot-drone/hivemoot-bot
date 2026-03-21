@@ -106,10 +106,20 @@ function createCheckContext(options?: {
   event: "check_suite.completed" | "check_run.completed";
   headSha?: string;
   pullRequests?: Array<{ number: number }>;
+  conclusion?: string;
 }) {
   const event = options?.event ?? "check_suite.completed";
   const headSha = options?.headSha ?? "abc123";
   const pullRequests = options?.pullRequests ?? [];
+  const conclusion = options?.conclusion;
+
+  const checkPayload: Record<string, unknown> = {
+    head_sha: headSha,
+    pull_requests: pullRequests,
+  };
+  if (event === "check_run.completed" && conclusion !== undefined) {
+    checkPayload.conclusion = conclusion;
+  }
 
   return {
     payload: {
@@ -118,10 +128,7 @@ function createCheckContext(options?: {
         name: "hivemoot-bot",
         full_name: "hivemoot/hivemoot-bot",
       },
-      [event === "check_suite.completed" ? "check_suite" : "check_run"]: {
-        head_sha: headSha,
-        pull_requests: pullRequests,
-      },
+      [event === "check_suite.completed" ? "check_suite" : "check_run"]: checkPayload,
     },
     log: {
       info: vi.fn(),
@@ -302,6 +309,8 @@ describe("status webhook handler", () => {
       event: "check_run.completed",
       headSha: "run-sha",
       pullRequests: [{ number: 55 }, { number: 89 }],
+      // Use a failing conclusion so evaluateMergeReadiness is triggered per-PR
+      conclusion: "failure",
     });
 
     await expect(handler!(context)).rejects.toThrow(

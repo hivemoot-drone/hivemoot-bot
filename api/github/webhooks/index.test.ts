@@ -1966,7 +1966,7 @@ describe("Queen Bot", () => {
       );
     });
 
-    it("should thread draft:true from prs.get() to evaluateAutomerge on check_run.completed", async () => {
+    it("should thread draft:true from prs.get() to evaluateAutomerge on check_run.completed with failing conclusion", async () => {
       const { handlers } = createWebhookHarness();
       vi.mocked(loadRepositoryConfig).mockResolvedValue(automergeEnabledConfig as any);
       vi.mocked(evaluateAutomerge).mockResolvedValue({ action: "unlabeled", reason: "PR is a draft" });
@@ -1980,7 +1980,8 @@ describe("Queen Bot", () => {
         octokit,
         log: mkLog(),
         payload: {
-          check_run: { pull_requests: [{ number: 1 }], head_sha: "abc123" },
+          // Use a failing conclusion so merge-readiness + automerge are evaluated
+          check_run: { pull_requests: [{ number: 1 }], head_sha: "abc123", conclusion: "failure" },
           repository: testRepo,
         },
       });
@@ -1988,6 +1989,92 @@ describe("Queen Bot", () => {
       expect(evaluateAutomerge).toHaveBeenCalledWith(
         expect.objectContaining({ draft: true, mergeable: null, graphql: expect.anything() })
       );
+    });
+
+    it("check_run.completed: skips evaluateMergeReadiness for passing conclusion (success)", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue({
+        governance: {
+          proposals: { discussion: { exits: [{ type: "manual" }], durationMs: 0 } },
+          pr: { maxPRsPerIssue: 3, trustedReviewers: [], intake: {}, mergeReady: {}, automerge: null },
+        },
+      } as any);
+
+      await handlers.get("check_run.completed")!({
+        octokit: createPRGuardOctokit(),
+        log: mkLog(),
+        payload: {
+          check_run: { pull_requests: [{ number: 1 }], head_sha: "abc123", conclusion: "success" },
+          repository: testRepo,
+        },
+      });
+
+      // Passing conclusion: defer to check_suite.completed to avoid label flapping
+      expect(evaluateMergeReadiness).not.toHaveBeenCalled();
+      expect(evaluateAutomerge).not.toHaveBeenCalled();
+    });
+
+    it("check_run.completed: skips evaluateMergeReadiness for passing conclusion (skipped)", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue({
+        governance: {
+          proposals: { discussion: { exits: [{ type: "manual" }], durationMs: 0 } },
+          pr: { maxPRsPerIssue: 3, trustedReviewers: [], intake: {}, mergeReady: {}, automerge: null },
+        },
+      } as any);
+
+      await handlers.get("check_run.completed")!({
+        octokit: createPRGuardOctokit(),
+        log: mkLog(),
+        payload: {
+          check_run: { pull_requests: [{ number: 1 }], head_sha: "abc123", conclusion: "skipped" },
+          repository: testRepo,
+        },
+      });
+
+      expect(evaluateMergeReadiness).not.toHaveBeenCalled();
+    });
+
+    it("check_run.completed: calls evaluateMergeReadiness immediately for failing conclusion", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue({
+        governance: {
+          proposals: { discussion: { exits: [{ type: "manual" }], durationMs: 0 } },
+          pr: { maxPRsPerIssue: 3, trustedReviewers: [], intake: {}, mergeReady: {}, automerge: null },
+        },
+      } as any);
+
+      await handlers.get("check_run.completed")!({
+        octokit: createPRGuardOctokit(),
+        log: mkLog(),
+        payload: {
+          check_run: { pull_requests: [{ number: 1 }], head_sha: "abc123", conclusion: "failure" },
+          repository: testRepo,
+        },
+      });
+
+      expect(evaluateMergeReadiness).toHaveBeenCalledOnce();
+    });
+
+    it("check_run.completed: calls evaluateMergeReadiness immediately for timed_out conclusion", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue({
+        governance: {
+          proposals: { discussion: { exits: [{ type: "manual" }], durationMs: 0 } },
+          pr: { maxPRsPerIssue: 3, trustedReviewers: [], intake: {}, mergeReady: {}, automerge: null },
+        },
+      } as any);
+
+      await handlers.get("check_run.completed")!({
+        octokit: createPRGuardOctokit(),
+        log: mkLog(),
+        payload: {
+          check_run: { pull_requests: [{ number: 1 }], head_sha: "abc123", conclusion: "timed_out" },
+          repository: testRepo,
+        },
+      });
+
+      expect(evaluateMergeReadiness).toHaveBeenCalledOnce();
     });
 
     it("should thread draft:true from pulls.list to evaluateAutomerge on status event", async () => {
