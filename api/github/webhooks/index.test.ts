@@ -1555,6 +1555,43 @@ describe("Queen Bot", () => {
         : Number.MAX_SAFE_INTEGER;
       expect(closeCallOrder).toBeLessThan(supersededCallOrder);
     });
+
+    it("should skip issue implementation tracking when PR merges into a non-default branch", async () => {
+      const { handlers } = createWebhookHarness();
+      const handler = handlers.get("pull_request.closed");
+      expect(handler).toBeDefined();
+
+      const octokit = createClosedPROctokit();
+      const log = { info: vi.fn(), error: vi.fn() };
+
+      vi.mocked(getLinkedIssues).mockResolvedValueOnce([
+        {
+          number: 79,
+          title: "coverage gap",
+          state: "OPEN",
+          labels: { nodes: [{ name: LABELS.READY_TO_IMPLEMENT }] },
+        },
+      ] as any);
+
+      await handler!({
+        octokit,
+        log,
+        payload: {
+          pull_request: { number: 22, merged: true, base: { ref: "feature/x" } },
+          repository: {
+            name: "test-repo",
+            full_name: "hivemoot/test-repo",
+            owner: { login: "hivemoot" },
+            default_branch: "main",
+          },
+        },
+      });
+
+      // Issue should not be transitioned to implemented
+      expect(octokit.rest.issues.addLabels).not.toHaveBeenCalled();
+      // No competing PRs should be closed
+      expect(octokit.rest.pulls.update).not.toHaveBeenCalled();
+    });
   });
 
   describe("Health Check Endpoint", () => {

@@ -645,9 +645,20 @@ export function app(probotApp: Probot): void {
 
       const linkedIssues = await getLinkedIssues(context.octokit, owner, repo, number);
 
-      // Clean governance labels from the merged PR
+      // Clean governance labels from the merged PR (always, regardless of target branch)
       const mergedPrRef = { owner, repo, prNumber: number };
       await prs.removeGovernanceLabels(mergedPrRef);
+
+      // Only mark linked issues as implemented for PRs targeting the default branch.
+      // A PR merging into a feature branch should not transition issues to implemented
+      // or close competing PRs — the implementation isn't done from the project's perspective.
+      if (!targetsDefaultBranch(context.payload.pull_request, context.payload.repository)) {
+        context.log.info(
+          { owner, repo, pr: number, base: context.payload.pull_request.base.ref },
+          "Skipping issue implementation tracking — PR merged into non-default branch"
+        );
+        return;
+      }
 
       for (const linkedIssue of filterByLabel(linkedIssues, LABELS.READY_TO_IMPLEMENT)) {
         const issueRef = { owner, repo, issueNumber: linkedIssue.number };
