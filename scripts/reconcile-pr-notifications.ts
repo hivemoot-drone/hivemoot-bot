@@ -29,6 +29,7 @@ import {
 } from "../api/lib/index.js";
 import { NOTIFICATION_TYPES } from "../api/lib/bot-comments.js";
 import { processImplementationIntake } from "../api/lib/implementation-intake.js";
+import { filterToConfirmedClosingRefs } from "../api/lib/closing-keywords.js";
 import { runForAllRepositories, runIfMain } from "./shared/run-installations.js";
 import type { Repository, PRRef } from "../api/lib/index.js";
 import type { PROperations } from "../api/lib/pr-operations.js";
@@ -157,7 +158,8 @@ export async function reconcileIssue(
     // but the PR was never labeled (no post-ready activity at the time, or
     // transient error). The hourly reconciler retries until the author responds.
     try {
-      const linkedIssues = await getLinkedIssues(octokit, owner, repo, linkedPR.number);
+      const rawLinkedIssues = await getLinkedIssues(octokit, owner, repo, linkedPR.number);
+      const linkedIssues = filterToConfirmedClosingRefs(rawLinkedIssues, linkedPR.body, { owner, repo });
 
       // Optional: fetch body-edit timestamp for the anti-gaming guard.
       // Isolated so a transient GraphQL failure doesn't block intake.

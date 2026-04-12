@@ -57,6 +57,23 @@ vi.mock("../api/lib/env-validation.js", () => ({
   }),
 }));
 
+// Mock getLinkedIssues (imported directly from graphql-queries, not via index)
+const mockGetLinkedIssues = vi.fn().mockResolvedValue([]);
+vi.mock("../api/lib/graphql-queries.js", () => ({
+  getLinkedIssues: (...args: unknown[]) => mockGetLinkedIssues(...args),
+}));
+
+// Mock filterToConfirmedClosingRefs as a pass-through
+vi.mock("../api/lib/closing-keywords.js", () => ({
+  filterToConfirmedClosingRefs: vi.fn(<T>(issues: T[] | null | undefined) => issues ?? []),
+}));
+
+// Mock processImplementationIntake
+const mockProcessImplementationIntake = vi.fn().mockResolvedValue(undefined);
+vi.mock("../api/lib/implementation-intake.js", () => ({
+  processImplementationIntake: (...args: unknown[]) => mockProcessImplementationIntake(...args),
+}));
+
 // Import after all mocks are in place
 import {
   notifyPendingPRs,
@@ -73,6 +90,7 @@ import {
 } from "./close-discussions.js";
 import type { EarlyDecisionDeps, DiscussionEarlyCheckDeps } from "./close-discussions.js";
 import { getOpenPRsForIssue, logger, loadRepositoryConfig, createIssueOperations, createGovernanceService } from "../api/lib/index.js";
+import { filterToConfirmedClosingRefs } from "../api/lib/closing-keywords.js";
 import { PR_MESSAGES } from "../api/config.js";
 import type {
   VotingOutcome,
@@ -86,6 +104,7 @@ const mockGetOpenPRsForIssue = vi.mocked(getOpenPRsForIssue);
 const mockLoadRepositoryConfig = vi.mocked(loadRepositoryConfig);
 const mockCreateIssueOperations = vi.mocked(createIssueOperations);
 const mockCreateGovernanceService = vi.mocked(createGovernanceService);
+const mockFilterToConfirmedClosingRefs = vi.mocked(filterToConfirmedClosingRefs);
 
 function buildIterator<T>(pages: T[][]): AsyncIterable<{ data: T[] }> {
   return {
@@ -948,6 +967,31 @@ describe("close-discussions script", () => {
       expect(commentBody).toContain("is ready for implementation");
       // issueReadyNeedsUpdate includes "opened before approval" — should NOT appear
       expect(commentBody).not.toContain("opened before approval");
+    });
+
+    it("should apply filterToConfirmedClosingRefs with PR body when intakeConfig is provided", async () => {
+      const rawLinkedIssues = [{ number: issueNumber, title: "Issue", state: "OPEN" as const, labels: { nodes: [] } }];
+      const prBody = "> Closes #42\n\nFixes #42";
+      mockGetOpenPRsForIssue.mockResolvedValue([
+        { number: 10, title: "PR", state: "OPEN", author: { login: "agent-alice" }, body: prBody },
+      ]);
+      mockGetLinkedIssues.mockResolvedValue(rawLinkedIssues);
+
+      const intakeConfig = {
+        maxPRsPerIssue: 3,
+        trustedReviewers: [],
+        intake: [{ method: "auto" as const }],
+      };
+      await notifyPendingPRs(fakeOctokit, appId, owner, repo, issueNumber, intakeConfig);
+
+      expect(mockFilterToConfirmedClosingRefs).toHaveBeenCalledWith(
+        rawLinkedIssues,
+        prBody,
+        { owner, repo }
+      );
+      expect(mockProcessImplementationIntake).toHaveBeenCalledWith(
+        expect.objectContaining({ prNumber: 10, linkedIssues: rawLinkedIssues })
+      );
     });
   });
 

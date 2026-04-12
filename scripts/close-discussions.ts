@@ -26,6 +26,7 @@ import {
 import { NOTIFICATION_TYPES } from "../api/lib/bot-comments.js";
 import { processImplementationIntake } from "../api/lib/implementation-intake.js";
 import { getLinkedIssues } from "../api/lib/graphql-queries.js";
+import { filterToConfirmedClosingRefs } from "../api/lib/closing-keywords.js";
 import { runForAllRepositories, runIfMain } from "./shared/run-installations.js";
 import { isExitEligible, isDiscussionExitEligible } from "../api/lib/governance.js";
 import type {
@@ -528,7 +529,8 @@ export async function notifyPendingPRs(
       // This covers the case where a trusted reviewer already approved a pre-voting PR.
       if (intakeConfig) {
         try {
-          const linkedIssues = await getLinkedIssues(octokit, owner, repo, linkedPR.number);
+          const rawLinkedIssues = await getLinkedIssues(octokit, owner, repo, linkedPR.number);
+          const linkedIssues = filterToConfirmedClosingRefs(rawLinkedIssues, linkedPR.body, { owner, repo });
           await processImplementationIntake({
             octokit,
             issues,

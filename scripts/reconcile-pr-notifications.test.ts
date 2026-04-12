@@ -71,6 +71,11 @@ vi.mock("../api/lib/implementation-intake.js", () => ({
   processImplementationIntake: (...args: unknown[]) => mockProcessImplementationIntake(...args),
 }));
 
+// Mock filterToConfirmedClosingRefs as a pass-through (stub mirrors the real stub behavior)
+vi.mock("../api/lib/closing-keywords.js", () => ({
+  filterToConfirmedClosingRefs: vi.fn(<T>(issues: T[] | null | undefined) => issues ?? []),
+}));
+
 // Import after all mocks are in place
 import {
   hasReadyToImplementNotification,
@@ -85,6 +90,7 @@ import {
   loadRepositoryConfig,
   logger,
 } from "../api/lib/index.js";
+import { filterToConfirmedClosingRefs } from "../api/lib/closing-keywords.js";
 import { PR_MESSAGES, LABELS } from "../api/config.js";
 import { NOTIFICATION_TYPES } from "../api/lib/bot-comments.js";
 import type { PROperations } from "../api/lib/pr-operations.js";
@@ -93,6 +99,7 @@ import type { PRRef } from "../api/lib/index.js";
 
 const mockGetOpenPRsForIssue = vi.mocked(getOpenPRsForIssue);
 const mockGetLinkedIssues = vi.mocked(getLinkedIssues);
+const mockFilterToConfirmedClosingRefs = vi.mocked(filterToConfirmedClosingRefs);
 const mockGetPRBodyLastEditedAt = vi.mocked(getPRBodyLastEditedAt);
 const mockLoadRepositoryConfig = vi.mocked(loadRepositoryConfig);
 
@@ -508,6 +515,29 @@ describe("reconcile-pr-notifications", () => {
 
       expect(mockProcessImplementationIntake).not.toHaveBeenCalled();
       expect(mockListCommentsWithBody).not.toHaveBeenCalled();
+    });
+
+    it("should apply filterToConfirmedClosingRefs with PR body before intake", async () => {
+      const rawLinkedIssues = [{ number: 42, title: "Issue", state: "OPEN" as const, labels: { nodes: [{ name: LABELS.READY_TO_IMPLEMENT }] } }];
+      const prBody = "> Closes #42\n\nFixes #42";
+      mockGetOpenPRsForIssue.mockResolvedValue([
+        { number: 10, title: "PR", state: "OPEN", author: { login: "agent-alice" }, body: prBody },
+      ]);
+      mockGetLinkedIssues.mockResolvedValue(rawLinkedIssues);
+      mockHasNotificationCommentInComments.mockReturnValue(false);
+      mockListCommentsWithBody.mockResolvedValue([]);
+
+      const prs = createPROperations(fakeOctokit, { appId }) as unknown as PROperations;
+      await reconcileIssue(fakeOctokit, prs, fakeIssues, owner, repo, 42, defaultMaxPRs);
+
+      expect(mockFilterToConfirmedClosingRefs).toHaveBeenCalledWith(
+        rawLinkedIssues,
+        prBody,
+        { owner, repo }
+      );
+      expect(mockProcessImplementationIntake).toHaveBeenCalledWith(
+        expect.objectContaining({ linkedIssues: rawLinkedIssues })
+      );
     });
   });
 
