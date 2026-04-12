@@ -20,7 +20,7 @@ import {
   disablePullRequestAutoMerge,
 } from "../../lib/graphql-queries.js";
 import { isAutoMergeNotEnabledError } from "../../lib/transient-error.js";
-import { hasSameRepoClosingKeywordRef } from "../../lib/closing-keywords.js";
+import { hasSameRepoClosingKeywordRef, filterToConfirmedClosingRefs } from "../../lib/closing-keywords.js";
 import { filterByLabel } from "../../lib/types.js";
 import { validateEnv, getAppId } from "../../lib/env-validation.js";
 import {
@@ -210,7 +210,7 @@ export function app(probotApp: Probot): void {
           owner,
           repo,
           prNumber: number,
-          linkedIssues,
+          linkedIssues: filterToConfirmedClosingRefs(linkedIssues, context.payload.pull_request.body, { owner, repo }),
           trigger: "opened",
           maxPRsPerIssue: repoConfig.governance.pr.maxPRsPerIssue,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
@@ -308,7 +308,7 @@ export function app(probotApp: Probot): void {
           owner,
           repo,
           prNumber: number,
-          linkedIssues,
+          linkedIssues: filterToConfirmedClosingRefs(linkedIssues, context.payload.pull_request.body, { owner, repo }),
           trigger: "updated",
           maxPRsPerIssue: repoConfig.governance.pr.maxPRsPerIssue,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
@@ -492,7 +492,7 @@ export function app(probotApp: Probot): void {
           owner,
           repo,
           prNumber: number,
-          linkedIssues,
+          linkedIssues: filterToConfirmedClosingRefs(linkedIssues, context.payload.pull_request.body, { owner, repo }),
           trigger: "edited",
           maxPRsPerIssue: repoConfig.governance.pr.maxPRsPerIssue,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
@@ -714,7 +714,7 @@ export function app(probotApp: Probot): void {
             owner,
             repo,
             prNumber: number,
-            linkedIssues,
+            linkedIssues: filterToConfirmedClosingRefs(linkedIssues, context.payload.pull_request.body, { owner, repo }),
             trigger: "updated",
             maxPRsPerIssue: repoConfig.governance.pr.maxPRsPerIssue,
             trustedReviewers: repoConfig.governance.pr.trustedReviewers,
