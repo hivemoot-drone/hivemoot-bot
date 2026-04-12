@@ -4,6 +4,19 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { isLLMConfigured, getLLMConfig, createModel, createModelFromEnv, getLLMReadiness } from "./provider.js";
 import { _resetMasterKeysCache } from "./byok.js";
 import type { LLMConfig, LLMProvider } from "./types.js";
+import { logger } from "../logger.js";
+
+vi.mock("../logger.js", () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    group: vi.fn(),
+    groupEnd: vi.fn(),
+  },
+  createLogger: vi.fn(),
+}));
 
 vi.mock("@openrouter/ai-sdk-provider", async () => {
   const actual = await vi.importActual<typeof import("@openrouter/ai-sdk-provider")>("@openrouter/ai-sdk-provider");
@@ -534,16 +547,12 @@ describe("LLM Provider", () => {
       process.env.LLM_MODEL = "claude-3-haiku";
       delete process.env.ANTHROPIC_API_KEY;
 
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
       const result = await createModelFromEnv();
 
       expect(result).toBeNull();
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
         expect.stringContaining("createModelFromEnv: model creation failed, degrading to no-LLM")
       );
-
-      warnSpy.mockRestore();
     });
 
     it("should resolve installation-scoped BYOK config from Redis", async () => {
