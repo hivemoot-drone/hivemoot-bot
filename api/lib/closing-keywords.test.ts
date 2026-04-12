@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { hasSameRepoClosingKeywordRef } from "./closing-keywords.js";
+import { filterToConfirmedClosingRefs, hasSameRepoClosingKeywordRef } from "./closing-keywords.js";
+
+describe("filterToConfirmedClosingRefs (stub)", () => {
+  const repository = { owner: "hivemoot", repo: "hivemoot-bot" };
+  const issue = { number: 42, title: "test", state: "open" as const };
+
+  it("returns empty array when linkedIssues is null", () => {
+    expect(filterToConfirmedClosingRefs(null, "Fixes #42", repository)).toEqual([]);
+  });
+
+  it("returns empty array when linkedIssues is undefined", () => {
+    expect(filterToConfirmedClosingRefs(undefined, "Fixes #42", repository)).toEqual([]);
+  });
+
+  it("passes through the array unchanged (stub pass-through)", () => {
+    expect(filterToConfirmedClosingRefs([issue], "Fixes #42", repository)).toEqual([issue]);
+  });
+});
 
 describe("hasSameRepoClosingKeywordRef", () => {
   const repository = { owner: "hivemoot", repo: "hivemoot-bot" };
