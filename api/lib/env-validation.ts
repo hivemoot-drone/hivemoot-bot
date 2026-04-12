@@ -5,6 +5,53 @@
  * across webhooks and scheduled scripts.
  */
 
+import { logger } from "./logger.js";
+
+/**
+ * Normalize an environment variable value by trimming whitespace and
+ * stripping surrounding matching quotes.
+ *
+ * Returns undefined if the input is undefined or results in an empty
+ * string after normalization. When normalization changes the value and
+ * a variable name is provided, emits a warning through the logger.
+ *
+ * Shared by the GitHub App bootstrap path and re-exported for LLM
+ * callers that previously imported it from api/lib/llm/env.ts.
+ */
+export function normalizeEnvString(
+  value: string | undefined,
+  name?: string
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  let normalized = value.trim();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  const hasMatchingQuotes =
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"));
+  if (hasMatchingQuotes) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  if (normalized !== value && name) {
+    logger.warn(`[env] env var ${name} was normalized (whitespace/quotes removed)`);
+  }
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+/**
+ * Read and normalize a single environment variable by name.
+ */
+function getNormalizedEnv(name: string): string | undefined {
+  return normalizeEnvString(process.env[name], name);
+}
+
 /**
  * Result of environment validation
  */
@@ -33,18 +80,24 @@ const APP_REQUIRED_VARS = ["APP_ID"] as const;
 const PRIVATE_KEY_VARS = ["PRIVATE_KEY", "APP_PRIVATE_KEY"] as const;
 
 /**
- * Check if private key is available (accepts either naming convention)
+ * Check if private key is available (accepts either naming convention).
+ * Whitespace-only and quote-only values are treated as unset.
  */
 export function hasPrivateKey(): boolean {
-  return PRIVATE_KEY_VARS.some((key) => !!process.env[key]);
+  return PRIVATE_KEY_VARS.some((key) => !!getNormalizedEnv(key));
 }
 
 /**
- * Get private key value (checks both naming conventions)
- * Empty strings are treated as unset to be consistent with hasPrivateKey()
+ * Get private key value (checks both naming conventions).
+ * Returns the normalized value: whitespace trimmed, surrounding quotes stripped.
+ * Empty or whitespace-only values are treated as unset.
  */
 export function getPrivateKey(): string | undefined {
-  return process.env.PRIVATE_KEY || process.env.APP_PRIVATE_KEY || undefined;
+  for (const key of PRIVATE_KEY_VARS) {
+    const val = getNormalizedEnv(key);
+    if (val) return val;
+  }
+  return undefined;
 }
 
 /**
@@ -55,9 +108,9 @@ export function getPrivateKey(): string | undefined {
 export function validateEnv(requireWebhookSecret = false): EnvValidationResult {
   const missing: string[] = [];
 
-  // Check required vars
+  // Check required vars (normalize before presence check so whitespace-only values fail)
   for (const varName of APP_REQUIRED_VARS) {
-    if (!process.env[varName]) {
+    if (!getNormalizedEnv(varName)) {
       missing.push(varName);
     }
   }
@@ -68,7 +121,7 @@ export function validateEnv(requireWebhookSecret = false): EnvValidationResult {
   }
 
   // Check webhook secret if required
-  if (requireWebhookSecret && !process.env.WEBHOOK_SECRET) {
+  if (requireWebhookSecret && !getNormalizedEnv("WEBHOOK_SECRET")) {
     missing.push("WEBHOOK_SECRET");
   }
 
@@ -85,7 +138,7 @@ export function validateEnv(requireWebhookSecret = false): EnvValidationResult {
  * @throws Error if APP_ID is missing or invalid
  */
 export function getAppId(): number {
-  const appIdStr = process.env.APP_ID;
+  const appIdStr = getNormalizedEnv("APP_ID");
   if (!appIdStr) {
     throw new Error("APP_ID environment variable is not set");
   }
@@ -143,6 +196,6 @@ export function getAppConfig(requireWebhookSecret = false): AppConfig {
   return {
     appId,
     privateKey,
-    webhookSecret: process.env.WEBHOOK_SECRET,
+    webhookSecret: getNormalizedEnv("WEBHOOK_SECRET"),
   };
 }
