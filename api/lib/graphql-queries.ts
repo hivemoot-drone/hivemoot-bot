@@ -10,6 +10,7 @@
 import type { LinkedIssue, PullRequest } from "./types.js";
 import type { MergeMethod } from "./repo-config.js";
 import { logger } from "./logger.js";
+import { filterToConfirmedClosingRefs } from "./closing-keywords.js";
 
 /**
  * GraphQL client interface - minimal subset needed for our queries.
@@ -150,6 +151,7 @@ const GET_OPEN_PRS_FOR_ISSUE_QUERY = `
                   number
                   title
                   state
+                  body
                   author {
                     login
                   }
@@ -174,6 +176,7 @@ interface CrossReferencedEvent {
     number?: number;
     title?: string;
     state?: "OPEN" | "CLOSED" | "MERGED";
+    body?: string | null;
     author?: {
       login: string;
     };
@@ -228,6 +231,7 @@ function isValidOpenPRSource(
   number: number;
   title?: string;
   state: "OPEN";
+  body?: string | null;
   author?: { login: string };
 } {
   return (
@@ -276,7 +280,8 @@ export async function getOpenPRsForIssue(
     const results = await Promise.allSettled(
       batch.map(async (pr) => {
         const linkedIssues = await getLinkedIssues(client, owner, repo, pr.number);
-        return linkedIssues.some((issue) => issue.number === issueNumber) ? pr : null;
+        const confirmed = filterToConfirmedClosingRefs(linkedIssues, pr.body, { owner, repo });
+        return confirmed.some((issue) => issue.number === issueNumber) ? pr : null;
       })
     );
 
@@ -377,6 +382,7 @@ async function getCrossReferencedOpenPRs(
         number: source.number,
         title: source.title ?? "",
         state: source.state,
+        body: source.body ?? null,
         author: {
           login: source.author?.login || "ghost",
         },

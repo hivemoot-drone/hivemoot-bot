@@ -121,6 +121,7 @@ export interface PullRequest {
   author: {
     login: string;
   };
+  body?: string | null;
 }
 
 /**

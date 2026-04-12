@@ -21,6 +21,7 @@ import {
   getLinkedIssues,
   type GraphQLClient,
 } from "./graphql-queries.js";
+import { filterToConfirmedClosingRefs } from "./closing-keywords.js";
 import type { IntakeMethod } from "./repo-config.js";
 import type { LinkedIssue, PRWithApprovals, PullRequest } from "./types.js";
 import { filterByLabel, hasLabel } from "./types.js";
@@ -435,21 +436,26 @@ export async function recalculateLeaderboardForPR(
   log: { info: (msg: string) => void },
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  prBody?: string | null
 ): Promise<void> {
   const appId = getAppId();
   const leaderboard = createLeaderboardService(octokit, { appId });
   const prs = createPROperations(octokit, { appId });
 
   const linkedIssues = await getLinkedIssues(octokit, owner, repo, prNumber);
-  const readyIssues = filterByLabel(linkedIssues, LABELS.READY_TO_IMPLEMENT);
+  const confirmedLinkedIssues =
+    prBody !== undefined
+      ? filterToConfirmedClosingRefs(linkedIssues, prBody, { owner, repo })
+      : linkedIssues;
+  const readyIssues = filterByLabel(confirmedLinkedIssues, LABELS.READY_TO_IMPLEMENT);
 
   if (readyIssues.length === 0) {
     return;
   }
 
   const linkedIssuesCache = new Map<number, LinkedIssue[]>();
-  linkedIssuesCache.set(prNumber, linkedIssues);
+  linkedIssuesCache.set(prNumber, confirmedLinkedIssues);
 
   const activeImplementationPRsByIssue = await getImplementationPRsByIssue({
     octokit,

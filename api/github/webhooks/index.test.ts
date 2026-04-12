@@ -1320,7 +1320,7 @@ describe("Queen Bot", () => {
         },
       });
 
-      expect(recalculateLeaderboardForPR).toHaveBeenCalledWith(octokit, log, "hivemoot", "test-repo", 22);
+      expect(recalculateLeaderboardForPR).toHaveBeenCalledWith(octokit, log, "hivemoot", "test-repo", 22, undefined);
       expect(processImplementationIntake).toHaveBeenCalledWith(
         expect.objectContaining({
           octokit,
@@ -1425,7 +1425,7 @@ describe("Queen Bot", () => {
         },
       });
 
-      expect(recalculateLeaderboardForPR).toHaveBeenCalledWith(octokit, log, "hivemoot", "test-repo", 56);
+      expect(recalculateLeaderboardForPR).toHaveBeenCalledWith(octokit, log, "hivemoot", "test-repo", 56, undefined);
       expect(processImplementationIntake).not.toHaveBeenCalled();
       expect(evaluateMergeReadiness).toHaveBeenCalledWith(
         expect.objectContaining({

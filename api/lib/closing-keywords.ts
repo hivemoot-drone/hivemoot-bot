@@ -32,6 +32,21 @@ function stripMarkdownCode(body: string): string {
     .replace(/`[^`]*`/g, " ");
 }
 
+/**
+ * Pass-through stub for filterToConfirmedClosingRefs.
+ * Real implementation is provided by PR #566 (fix(intake): filter quoted closing examples).
+ * Remove this stub and the type import below after #566 merges.
+ *
+ * @todo Remove when #566 merges
+ */
+export function filterToConfirmedClosingRefs<T extends { number: number }>(
+  linkedIssues: T[] | null | undefined,
+  _prBody: string | null | undefined,
+  _repository: RepositoryRef
+): T[] {
+  return linkedIssues ?? [];
+}
+
 export function hasSameRepoClosingKeywordRef(body: string | null | undefined, repository: RepositoryRef): boolean {
   if (!body) {
     return false;

@@ -627,7 +627,7 @@ export function app(probotApp: Probot): void {
         const prs = createPROperations(context.octokit, { appId });
         const prRef = { owner, repo, prNumber: number };
         await prs.removeGovernanceLabels(prRef);
-        await recalculateLeaderboardForPR(context.octokit, context.log, owner, repo, number);
+        await recalculateLeaderboardForPR(context.octokit, context.log, owner, repo, number, context.payload.pull_request.body);
       } catch (error) {
         context.log.error({ err: error, pr: number, repo: fullName }, "Failed to process closed PR");
         throw error;
@@ -699,7 +699,7 @@ export function app(probotApp: Probot): void {
         getLinkedIssues(context.octokit, owner, repo, number),
         // Leaderboard recalc only on approvals
         isApproval
-          ? recalculateLeaderboardForPR(context.octokit, context.log, owner, repo, number)
+          ? recalculateLeaderboardForPR(context.octokit, context.log, owner, repo, number, context.payload.pull_request.body)
           : Promise.resolve(),
       ]);
 
@@ -775,7 +775,7 @@ export function app(probotApp: Probot): void {
         return;
       }
 
-      await recalculateLeaderboardForPR(context.octokit, context.log, owner, repo, number);
+      await recalculateLeaderboardForPR(context.octokit, context.log, owner, repo, number, context.payload.pull_request.body);
 
       // Dismissed approval may drop below threshold
       if (repoConfig.governance.pr) {

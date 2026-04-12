@@ -523,9 +523,9 @@ describe("getOpenPRsForIssue", () => {
     const result = await getOpenPRsForIssue(mockClient, "owner", "repo", 123);
 
     expect(result).toHaveLength(3);
-    expect(result[0]).toEqual({ number: 1, title: "PR 1", state: "OPEN", author: { login: "user1" } });
-    expect(result[1]).toEqual({ number: 2, title: "PR 2", state: "OPEN", author: { login: "ghost" } });
-    expect(result[2]).toEqual({ number: 3, title: "PR 3", state: "OPEN", author: { login: "ghost" } });
+    expect(result[0]).toEqual({ number: 1, title: "PR 1", state: "OPEN", body: null, author: { login: "user1" } });
+    expect(result[1]).toEqual({ number: 2, title: "PR 2", state: "OPEN", body: null, author: { login: "ghost" } });
+    expect(result[2]).toEqual({ number: 3, title: "PR 3", state: "OPEN", body: null, author: { login: "ghost" } });
   });
 
   it("should use 'ghost' for PRs with null author (deleted GitHub account)", async () => {
@@ -804,6 +804,7 @@ describe("getOpenPRsForIssue", () => {
         number: 42,
         title: "Add new feature",
         state: "OPEN",
+        body: null,
         author: { login: "developer" },
       },
     ]);
@@ -1510,6 +1511,72 @@ describe("getOpenPRsForIssue", () => {
       (call) => (call[0] as string).includes("getLinkedIssues")
     );
     expect(linkedIssuesCalls).toHaveLength(2);
+  });
+
+  it("should fetch body field for each candidate PR in the GraphQL query", async () => {
+    vi.mocked(mockClient.graphql).mockResolvedValue({
+      repository: {
+        issue: {
+          timelineItems: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [],
+          },
+        },
+      },
+    });
+
+    await getOpenPRsForIssue(mockClient, "owner", "repo", 99);
+
+    const crossRefCall = vi.mocked(mockClient.graphql).mock.calls.find(
+      (call) => (call[0] as string).includes("getOpenPRsForIssue")
+    );
+    expect(crossRefCall).toBeDefined();
+    // Verify the body field is fetched for each candidate PR
+    expect(crossRefCall![0]).toContain("body");
+  });
+
+  it("should include body in returned PullRequest objects", async () => {
+    vi.mocked(mockClient.graphql).mockImplementation(async (query: string) => {
+      if (query.includes("getOpenPRsForIssue")) {
+        return {
+          repository: {
+            issue: {
+              timelineItems: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    source: {
+                      number: 55,
+                      title: "PR with body",
+                      state: "OPEN",
+                      body: "Fixes #99\n\nImplementation details.",
+                      author: { login: "dev" },
+                      repository: { owner: { login: "owner" }, name: "repo" },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        };
+      } else if (query.includes("getLinkedIssues")) {
+        return {
+          repository: {
+            pullRequest: {
+              closingIssuesReferences: {
+                nodes: [{ number: 99, title: "Issue", state: "OPEN", labels: { nodes: [] } }],
+              },
+            },
+          },
+        };
+      }
+      throw new Error(`Unexpected GraphQL query: ${(query as string).slice(0, 80)}`);
+    });
+
+    const result = await getOpenPRsForIssue(mockClient, "owner", "repo", 99);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].body).toBe("Fixes #99\n\nImplementation details.");
   });
 });
 
