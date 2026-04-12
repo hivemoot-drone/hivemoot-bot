@@ -14,7 +14,13 @@ vi.mock("./graphql-queries.js", () => ({
   getLinkedIssues: vi.fn(),
 }));
 
+// Mock closing-keywords used by recalculateLeaderboardForPR for PR body filtering
+vi.mock("./closing-keywords.js", () => ({
+  filterToConfirmedClosingRefs: vi.fn((issues: unknown[]) => issues ?? []),
+}));
+
 import { getLinkedIssues } from "./graphql-queries.js";
+import { filterToConfirmedClosingRefs } from "./closing-keywords.js";
 
 describe("Implementation Intake", () => {
   const createMockOctokit = () => ({
@@ -1421,5 +1427,76 @@ describe("Leaderboard race condition fix", () => {
       .join("\n")
       .match(/#101/g) ?? [];
     expect(entries.length).toBe(1);
+  });
+
+  it("should skip leaderboard update when prBody filters out all linked issues (false positive)", async () => {
+    const mockOctokit = createMockOctokit();
+
+    const readyIssue: LinkedIssue = {
+      number: 7,
+      title: "Ready issue",
+      state: "OPEN",
+      labels: { nodes: [{ name: LABELS.READY_TO_IMPLEMENT }] },
+    };
+
+    vi.mocked(getLinkedIssues).mockResolvedValue([readyIssue]);
+    // Simulate filterToConfirmedClosingRefs stripping the false-positive link
+    vi.mocked(filterToConfirmedClosingRefs).mockReturnValueOnce([]);
+
+    await recalculateLeaderboardForPR(
+      mockOctokit,
+      { info: vi.fn() },
+      "hivemoot",
+      "colony",
+      101,
+      'This PR explains why "Closes #7" is the wrong syntax here.'
+    );
+
+    expect(filterToConfirmedClosingRefs).toHaveBeenCalledWith(
+      [readyIssue],
+      'This PR explains why "Closes #7" is the wrong syntax here.',
+      { owner: "hivemoot", repo: "colony" }
+    );
+    // All linked issues were filtered out — no leaderboard comment should be posted
+    expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+    expect(mockOctokit.rest.issues.updateComment).not.toHaveBeenCalled();
+  });
+
+  it("should call filterToConfirmedClosingRefs and continue when prBody confirms the closing ref", async () => {
+    const mockOctokit = createMockOctokit();
+    // PR #101 has the implementation label so it appears as a candidate
+    mockOctokit.rest.issues.get.mockResolvedValue({
+      data: { labels: [{ name: LABELS.IMPLEMENTATION }] },
+    });
+
+    const readyIssue: LinkedIssue = {
+      number: 7,
+      title: "Ready issue",
+      state: "OPEN",
+      labels: { nodes: [{ name: LABELS.READY_TO_IMPLEMENT }] },
+    };
+
+    vi.mocked(getLinkedIssues).mockResolvedValue([readyIssue]);
+    // filterToConfirmedClosingRefs confirms the ref is real
+    vi.mocked(filterToConfirmedClosingRefs).mockReturnValueOnce([readyIssue]);
+
+    await recalculateLeaderboardForPR(
+      mockOctokit,
+      { info: vi.fn() },
+      "hivemoot",
+      "colony",
+      101,
+      "Fixes #7\n\nImplementation details."
+    );
+
+    expect(filterToConfirmedClosingRefs).toHaveBeenCalledWith(
+      [readyIssue],
+      "Fixes #7\n\nImplementation details.",
+      { owner: "hivemoot", repo: "colony" }
+    );
+    // The confirmed ref should lead to a leaderboard upsert (create or update comment)
+    const created = mockOctokit.rest.issues.createComment.mock.calls.length;
+    const updated = mockOctokit.rest.issues.updateComment.mock.calls.length;
+    expect(created + updated).toBeGreaterThan(0);
   });
 });
