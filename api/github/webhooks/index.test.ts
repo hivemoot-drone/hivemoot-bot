@@ -1555,6 +1555,39 @@ describe("Queen Bot", () => {
         : Number.MAX_SAFE_INTEGER;
       expect(closeCallOrder).toBeLessThan(supersededCallOrder);
     });
+
+    it("should pass pull_request.body to recalculateLeaderboardForPR when closed without merge", async () => {
+      const { handlers } = createWebhookHarness();
+      const handler = handlers.get("pull_request.closed");
+      expect(handler).toBeDefined();
+
+      const octokit = createClosedPROctokit();
+      const log = { info: vi.fn(), error: vi.fn() };
+
+      vi.mocked(recalculateLeaderboardForPR).mockReset().mockResolvedValue(undefined);
+
+      await handler!({
+        octokit,
+        log,
+        payload: {
+          pull_request: { number: 33, merged: false, body: "Fixes #42" },
+          repository: {
+            name: "test-repo",
+            full_name: "hivemoot/test-repo",
+            owner: { login: "hivemoot" },
+          },
+        },
+      });
+
+      expect(recalculateLeaderboardForPR).toHaveBeenCalledWith(
+        octokit,
+        log,
+        "hivemoot",
+        "test-repo",
+        33,
+        "Fixes #42"
+      );
+    });
   });
 
   describe("Health Check Endpoint", () => {
