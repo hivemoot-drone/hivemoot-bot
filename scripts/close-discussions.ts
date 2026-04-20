@@ -681,9 +681,8 @@ interface PhaseConfig {
 
 /**
  * Paginate through issues with a given label and process each through
- * the phase transition pipeline. Queries both canonical and legacy label
- * names to catch entities carrying either old or new labels.
- * Skips pull requests (the issues API returns both issues and PRs).
+ * the phase transition pipeline. Skips pull requests (the issues API
+ * returns both issues and PRs).
  */
 async function processPhaseIssues(
   octokit: InstanceType<typeof Octokit>,

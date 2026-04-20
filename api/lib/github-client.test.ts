@@ -292,7 +292,7 @@ describe("IssueOperations", () => {
       await expect(issueOps.removeLabel(testRef, "label")).rejects.toThrow("Server Error");
     });
 
-    it("should silently ignore when neither canonical nor legacy labels exist", async () => {
+    it("should silently ignore when label does not exist", async () => {
       const notFound = new Error("Not Found") as Error & { status: number };
       notFound.status = 404;
 
