@@ -31,6 +31,19 @@ describe("normalizeEnvString", () => {
     expect(normalizeEnvString("   ")).toBeUndefined();
   });
 
+  it("emits a logger.warn when whitespace-only input normalizes to empty", () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    normalizeEnvString("   ", "PRIVATE_KEY");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[env] env var PRIVATE_KEY was normalized (whitespace/quotes removed)"
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("returns undefined for single-quote-only string", () => {
+    expect(normalizeEnvString("''")).toBeUndefined();
+  });
+
   it("trims surrounding whitespace", () => {
     expect(normalizeEnvString("  hello  ")).toBe("hello");
   });

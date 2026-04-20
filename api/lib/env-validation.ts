@@ -28,6 +28,7 @@ export function normalizeEnvString(
 
   let normalized = value.trim();
   if (normalized.length === 0) {
+    if (name) logger.warn(`[env] env var ${name} was normalized (whitespace/quotes removed)`);
     return undefined;
   }
 
