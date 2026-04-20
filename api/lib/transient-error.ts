@@ -78,12 +78,14 @@ export function isAutoMergeNotEnabledError(error: unknown): boolean {
 /**
  * Determine whether a GraphQL error means the repository does not allow auto-merge.
  *
- * GitHub returns `GraphqlResponseError` with `errors[].type === "FORBIDDEN"` and a
- * human-readable message containing "not allowed" when `enablePullRequestAutoMerge`
- * is called on a repository that has not enabled auto-merge (typically: missing
- * branch protection rules). The type identifier ("PullRequestAutoMergeNotAllowed")
- * lives in `errors[].type` and does NOT appear in `.message`, so the old
- * `msg.includes("PullRequestAutoMergeNotAllowed")` check always returned false.
+ * GitHub is expected to return `GraphqlResponseError` with `errors[].type === "FORBIDDEN"`
+ * and a human-readable message containing "not allowed" when `enablePullRequestAutoMerge`
+ * is called on a repository that has the auto-merge feature disabled in repo settings.
+ * The type identifier ("PullRequestAutoMergeNotAllowed") lives in `errors[].type` and
+ * does NOT appear in `.message`, so the old `msg.includes("PullRequestAutoMergeNotAllowed")`
+ * check always returned false. The FORBIDDEN type is inferred from GitHub's GraphQL error
+ * taxonomy (policy rejections) and the /not allowed/i message filter guards against
+ * false positives from unrelated FORBIDDEN errors.
  *
  * Uses duck-typing on `.name` for the same cross-version reason as
  * `isAutoMergeNotEnabledError` above.
