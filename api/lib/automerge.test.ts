@@ -16,6 +16,18 @@ function makeAutoMergeNotEnabledError(): GraphqlResponseError<null> {
   );
 }
 
+/** Build a GraphqlResponseError that matches what GitHub returns when repo auto-merge is not allowed. */
+function makeAutoMergeNotAllowedError(): GraphqlResponseError<null> {
+  return new GraphqlResponseError(
+    { url: "https://api.github.com/graphql" },
+    {},
+    {
+      data: null,
+      errors: [{ message: "Pull request Auto merge is not allowed.", type: "FORBIDDEN" }],
+    }
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ───────────────────────────────────────────────────────────────────────────────
@@ -936,7 +948,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     const config = makeConfig({ dryRun: false });
     const prs = makeEligiblePROperations();
     const mockGraphQL = {
-      graphql: vi.fn().mockRejectedValue(new Error("PullRequestAutoMergeNotAllowed")),
+      graphql: vi.fn().mockRejectedValue(makeAutoMergeNotAllowedError()),
     };
     const warnLog = vi.fn();
 
@@ -956,14 +968,17 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     expect(warnLog).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enable GitHub auto-merge")
     );
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining("Settings → General → Pull Requests")
+    );
   });
 
-  it("includes branch protection hint only for PullRequestAutoMergeNotAllowed", async () => {
+  it("includes auto-merge settings hint only for PullRequestAutoMergeNotAllowed", async () => {
     const config = makeConfig({ dryRun: false });
     const prs = makeEligiblePROperations();
     const warnLog = vi.fn();
 
-    // Rate limit error — should NOT get branch protection hint
+    // Rate limit error — should NOT get the allow auto-merge hint
     const mockGraphQL = {
       graphql: vi.fn().mockRejectedValue(new Error("API rate limit exceeded")),
     };
@@ -979,7 +994,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     });
 
     expect(warnLog).toHaveBeenCalledWith(
-      expect.not.stringContaining("branch protection")
+      expect.not.stringContaining("Settings → General")
     );
   });
 

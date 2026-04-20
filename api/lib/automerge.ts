@@ -335,7 +335,7 @@ export async function evaluateAutomerge(
         log?.info(`[PR #${ref.prNumber}] Enabled GitHub native auto-merge (${config.mergeMethod})`);
       } catch (err) {
         const hint = isAutoMergeNotAllowedError(err)
-          ? " Verify the repository has branch protection rules configured."
+          ? " Enable 'Allow auto-merge' in Settings → General → Pull Requests."
           : "";
         const msg = err instanceof Error ? err.message : String(err);
         const warnMsg = `[PR #${ref.prNumber}] Failed to enable GitHub auto-merge: ${msg}.${hint}`;
