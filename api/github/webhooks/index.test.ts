@@ -2583,6 +2583,111 @@ describe("Queen Bot", () => {
 
       expect(log.warn).not.toHaveBeenCalled();
     });
+
+    describe("notifyAutomergeStatus eligible/reason derivation", () => {
+      const automergeOnlyConfig = {
+        governance: {
+          proposals: { discussion: { exits: [{ type: "manual" }], durationMs: 0 } },
+          pr: {
+            maxPRsPerIssue: 3,
+            trustedReviewers: [],
+            intake: {},
+            mergeReady: null,
+            automerge: {
+              dryRun: true,
+              allowedPaths: ["**"],
+              denyPaths: [],
+              maxFiles: 100,
+              maxChangedLines: 1000,
+              minApprovals: 1,
+              requireChecks: false,
+            },
+          },
+        },
+      };
+
+      const rfrPayload = (number: number) => ({
+        pull_request: { number, labels: [], node_id: "PR_node", mergeable: null },
+        repository: testRepo,
+      });
+
+      it("does not post a comment when action is skipped", async () => {
+        const { handlers } = createWebhookHarness();
+        vi.mocked(loadRepositoryConfig).mockResolvedValue(automergeOnlyConfig as any);
+        vi.mocked(evaluateAutomerge).mockResolvedValue({ action: "skipped", reason: "feature disabled" });
+        const octokit = mkOctokit();
+        await handlers.get("pull_request.ready_for_review")!({
+          octokit,
+          log: mkLog(),
+          payload: rfrPayload(1),
+        });
+        expect(octokit.rest.issues.createComment).not.toHaveBeenCalled();
+      });
+
+      it("posts eligible comment when action is labeled", async () => {
+        const { handlers } = createWebhookHarness();
+        vi.mocked(loadRepositoryConfig).mockResolvedValue(automergeOnlyConfig as any);
+        vi.mocked(evaluateAutomerge).mockResolvedValue({ action: "labeled" });
+        const octokit = mkOctokit();
+        await handlers.get("pull_request.ready_for_review")!({
+          octokit,
+          log: mkLog(),
+          payload: rfrPayload(2),
+        });
+        expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
+        expect(octokit.rest.issues.createComment).toHaveBeenCalledWith(
+          expect.objectContaining({ body: expect.stringContaining("✅ This PR qualifies for automerge") })
+        );
+      });
+
+      it("posts ineligible comment with reason when action is unlabeled", async () => {
+        const { handlers } = createWebhookHarness();
+        vi.mocked(loadRepositoryConfig).mockResolvedValue(automergeOnlyConfig as any);
+        vi.mocked(evaluateAutomerge).mockResolvedValue({ action: "unlabeled", reason: "PR is a draft" });
+        const octokit = mkOctokit();
+        await handlers.get("pull_request.ready_for_review")!({
+          octokit,
+          log: mkLog(),
+          payload: rfrPayload(3),
+        });
+        expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
+        expect(octokit.rest.issues.createComment).toHaveBeenCalledWith(
+          expect.objectContaining({ body: expect.stringContaining("does not currently qualify for automerge: PR is a draft") })
+        );
+      });
+
+      it("posts ineligible comment with reason when action is noop labeled=false", async () => {
+        const { handlers } = createWebhookHarness();
+        vi.mocked(loadRepositoryConfig).mockResolvedValue(automergeOnlyConfig as any);
+        vi.mocked(evaluateAutomerge).mockResolvedValue({ action: "noop", labeled: false, reason: "insufficient approvals: 1/2" });
+        const octokit = mkOctokit();
+        await handlers.get("pull_request.ready_for_review")!({
+          octokit,
+          log: mkLog(),
+          payload: rfrPayload(4),
+        });
+        expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
+        expect(octokit.rest.issues.createComment).toHaveBeenCalledWith(
+          expect.objectContaining({ body: expect.stringContaining("does not currently qualify for automerge: insufficient approvals: 1/2") })
+        );
+      });
+
+      it("posts eligible comment when action is noop labeled=true", async () => {
+        const { handlers } = createWebhookHarness();
+        vi.mocked(loadRepositoryConfig).mockResolvedValue(automergeOnlyConfig as any);
+        vi.mocked(evaluateAutomerge).mockResolvedValue({ action: "noop", labeled: true });
+        const octokit = mkOctokit();
+        await handlers.get("pull_request.ready_for_review")!({
+          octokit,
+          log: mkLog(),
+          payload: rfrPayload(5),
+        });
+        expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
+        expect(octokit.rest.issues.createComment).toHaveBeenCalledWith(
+          expect.objectContaining({ body: expect.stringContaining("✅ This PR qualifies for automerge") })
+        );
+      });
+    });
   });
 
   describe("Message Templates", () => {

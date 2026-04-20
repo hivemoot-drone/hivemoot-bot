@@ -104,6 +104,9 @@ async function notifyAutomergeStatus(
   result: AutomergeResult | undefined,
   log?: { warn: (msg: string) => void }
 ): Promise<void> {
+  // skipped = feature disabled; no comment posted, and any prior status comment is left as-is.
+  // If automerge is later re-disabled, an existing "✅ qualifies" comment will persist until
+  // the next non-skipped evaluation overwrites it.
   if (!result || result.action === "skipped") return;
 
   const eligible =
