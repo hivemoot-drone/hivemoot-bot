@@ -25,7 +25,6 @@ import {
   hasPaginateIterator,
   ISSUE_CLIENT_CHECKS,
 } from "./client-validation.js";
-import { LEGACY_LABEL_MAP, isLabelMatch } from "../config.js";
 import { logger } from "./logger.js";
 
 // Re-export IssueComment for backwards compatibility
@@ -232,11 +231,7 @@ export class IssueOperations {
   }
 
   /**
-   * Remove a label from an issue.
-   *
-   * On 404 (canonical name not found), falls back to removing legacy aliases
-   * that map to the same canonical label. This prevents dual label accumulation
-   * during the transition period where issues may carry old label names.
+   * Remove a label from an issue. 404 is treated as a no-op (label already absent).
    */
   async removeLabel(ref: IssueRef, label: string): Promise<void> {
     try {
@@ -250,22 +245,7 @@ export class IssueOperations {
       if (getErrorStatus(error) !== 404) {
         throw error;
       }
-      // Canonical not found — try legacy aliases
-      for (const [legacy, canonical] of Object.entries(LEGACY_LABEL_MAP)) {
-        if (canonical === label) {
-          try {
-            await this.client.rest.issues.removeLabel({
-              owner: ref.owner,
-              repo: ref.repo,
-              issue_number: ref.issueNumber,
-              name: legacy,
-            });
-            return;
-          } catch (e) {
-            if (getErrorStatus(e) !== 404) throw e;
-          }
-        }
-      }
+      // Label not found — already removed or never applied; treat as no-op
     }
   }
 
@@ -892,7 +872,7 @@ export class IssueOperations {
 
     for await (const { data: events } of iterator) {
       for (const event of events as TimelineEvent[]) {
-        if (event.label?.name && isLabelMatch(event.label.name, labelName)) {
+        if (event.label?.name && event.label.name === labelName) {
           if (event.event === "labeled") {
             labelEvents.push({ type: "labeled", time: new Date(event.created_at) });
           } else if (event.event === "unlabeled") {

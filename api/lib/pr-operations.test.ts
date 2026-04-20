@@ -641,11 +641,10 @@ describe("PROperations", () => {
       expect(result).toHaveLength(150);
       expect(result[0].number).toBe(1);
       expect(result[149].number).toBe(150);
-      // 2 calls for canonical label pagination + 1 call for legacy alias "implementation"
-      expect(mockClient.rest.issues.listForRepo).toHaveBeenCalledTimes(3);
+      // 2 calls: page 1 (full, triggers next) and page 2 (partial, stops)
+      expect(mockClient.rest.issues.listForRepo).toHaveBeenCalledTimes(2);
       expect(mockClient.rest.issues.listForRepo).toHaveBeenNthCalledWith(1, expect.objectContaining({ page: 1, labels: "hivemoot:candidate" }));
       expect(mockClient.rest.issues.listForRepo).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2, labels: "hivemoot:candidate" }));
-      expect(mockClient.rest.issues.listForRepo).toHaveBeenNthCalledWith(3, expect.objectContaining({ page: 1, labels: "implementation" }));
     });
 
     it("should stop paginating when an empty page is returned", async () => {
@@ -664,8 +663,8 @@ describe("PROperations", () => {
       const result = await prOps.findPRsWithLabel("test-org", "test-repo", "hivemoot:candidate");
 
       expect(result).toHaveLength(100);
-      // 2 calls for canonical label + 1 call for legacy alias "implementation"
-      expect(mockClient.rest.issues.listForRepo).toHaveBeenCalledTimes(3);
+      // 2 calls: page 1 (full, triggers next) and page 2 (empty, stops)
+      expect(mockClient.rest.issues.listForRepo).toHaveBeenCalledTimes(2);
     });
 
     it("should filter issues from PRs across multiple pages", async () => {
