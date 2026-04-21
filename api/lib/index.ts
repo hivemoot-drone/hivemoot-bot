@@ -107,7 +107,12 @@ export type {
   MergeReadyConfig,
   AutomergeConfig,
   PRConfig,
+  ReviewRequestsConfig,
   StandupConfig,
   AutoGatherConfig,
 } from "./repo-config.js";
 export { isAutoVotingExit, isAutoDiscussionExit } from "./repo-config.js";
+
+// Trusted reviewer auto-request
+export { requestTrustedReviewers } from "./review-requests.js";
+export type { RequestReviewersParams } from "./review-requests.js";

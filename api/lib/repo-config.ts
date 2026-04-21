@@ -165,12 +165,22 @@ export interface RepoConfigFile {
       intake?: unknown;
       mergeReady?: unknown;
       automerge?: unknown;
+      reviewRequests?: unknown;
     };
   };
   standup?: {
     enabled?: boolean;
     category?: string;
   };
+}
+
+/**
+ * Configuration for auto-requesting trusted reviewers on candidate PRs.
+ * Null when not configured (feature disabled).
+ */
+export interface ReviewRequestsConfig {
+  /** Maximum number of trusted reviewers to request per trigger. */
+  count: number;
 }
 
 /**
@@ -185,6 +195,7 @@ export interface PRConfig {
   intake: IntakeMethod[];
   mergeReady: MergeReadyConfig | null;
   automerge: AutomergeConfig | null;
+  reviewRequests: ReviewRequestsConfig | null;
 }
 
 /**
@@ -1323,6 +1334,33 @@ function deriveVotingDurationMs(exits: VotingExit[]): number {
   return autoExits[autoExits.length - 1].afterMs;
 }
 
+const REVIEW_REQUESTS_COUNT_BOUNDS = {
+  ...CONFIG_BOUNDS.reviewRequests.count,
+};
+
+/**
+ * Parse and validate reviewRequests config from the pr section.
+ * Returns null (feature disabled) when the key is absent or not an object.
+ */
+function parseReviewRequestsConfig(
+  value: unknown,
+  repoFullName: string
+): ReviewRequestsConfig | null {
+  if (value === undefined || value === null) return null;
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    logger.warn(
+      `[${repoFullName}] Invalid reviewRequests config: expected object. Disabling.`
+    );
+    return null;
+  }
+
+  const obj = value as { count?: unknown };
+  const count = parseIntValue(obj.count, REVIEW_REQUESTS_COUNT_BOUNDS, "pr.reviewRequests.count", repoFullName);
+
+  return { count };
+}
+
 /**
  * Parse and validate a RepoConfigFile object.
  * Returns EffectiveConfig with all values validated and clamped.
@@ -1356,6 +1394,7 @@ function parseRepoConfig(raw: unknown, repoFullName: string): EffectiveConfig {
     const intake = parseIntakeMethods(prConfigRaw?.intake, trustedReviewers, repoFullName);
     const mergeReady = parseMergeReadyConfig(prConfigRaw?.mergeReady, trustedReviewers, repoFullName);
     const automerge = parseAutomergeConfig(prConfigRaw?.automerge, trustedReviewers, repoFullName);
+    const reviewRequests = parseReviewRequestsConfig(prConfigRaw?.reviewRequests, repoFullName);
     pr = {
       // Stale PR cleanup is opt-in per repo: omit staleDays (or set it to null) to disable it.
       staleDays:
@@ -1367,6 +1406,7 @@ function parseRepoConfig(raw: unknown, repoFullName: string): EffectiveConfig {
       intake,
       mergeReady,
       automerge,
+      reviewRequests,
     };
   }
 

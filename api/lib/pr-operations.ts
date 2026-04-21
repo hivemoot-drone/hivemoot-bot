@@ -55,7 +55,26 @@ export interface PRClient {
           state: string;
           user: { login: string } | null;
           submitted_at: string;
+          /** SHA of the commit the review was submitted against. */
+          commit_id?: string;
         }>;
+      }>;
+
+      requestReviewers: (params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+        reviewers: string[];
+      }) => Promise<unknown>;
+
+      listRequestedReviewers: (params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+      }) => Promise<{
+        data: {
+          users: Array<{ login: string }>;
+        };
       }>;
 
       listCommits: (params: {
@@ -197,6 +216,11 @@ export interface PRClient {
           }>;
         };
       }>;
+      getCollaboratorPermissionLevel: (params: {
+        owner: string;
+        repo: string;
+        username: string;
+      }) => Promise<{ data: { permission: string } }>;
     };
   };
 }
@@ -831,5 +855,90 @@ export class PROperations {
     }
 
     return false;
+  }
+
+  /**
+   * Request a set of reviewers on a PR.
+   * GitHub deduplicates requests server-side — re-requesting an already-pending
+   * reviewer is a safe no-op.
+   */
+  async requestReviewers(ref: PRRef, reviewers: string[]): Promise<void> {
+    if (reviewers.length === 0) return;
+    await this.client.rest.pulls.requestReviewers({
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.prNumber,
+      reviewers,
+    });
+  }
+
+  /**
+   * Get the set of reviewers who currently have a pending review request on this PR.
+   */
+  async getRequestedReviewers(ref: PRRef): Promise<Set<string>> {
+    const { data } = await this.client.rest.pulls.listRequestedReviewers({
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.prNumber,
+    });
+    return new Set(data.users.map((u) => u.login.toLowerCase()));
+  }
+
+  /**
+   * Get the set of reviewers who have submitted a decisive review at the given headSha.
+   *
+   * Decisive states are APPROVED, CHANGES_REQUESTED, or DISMISSED.
+   * These reviewers have already seen the current revision and should not be re-requested.
+   * Uses pagination to handle PRs with >100 reviews.
+   */
+  async getReviewersAtCurrentHead(ref: PRRef, headSha: string): Promise<Set<string>> {
+    const DECISIVE_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
+    const reviewed = new Set<string>();
+
+    let page = 1;
+    const perPage = 100;
+
+    while (true) {
+      const { data: reviews } = await this.client.rest.pulls.listReviews({
+        owner: ref.owner,
+        repo: ref.repo,
+        pull_number: ref.prNumber,
+        per_page: perPage,
+        page,
+      });
+
+      if (reviews.length === 0) break;
+
+      for (const review of reviews) {
+        if (review.user && DECISIVE_STATES.has(review.state) && review.commit_id === headSha) {
+          reviewed.add(review.user.login.toLowerCase());
+        }
+      }
+
+      if (reviews.length < perPage) break;
+      page++;
+    }
+
+    return reviewed;
+  }
+
+  /**
+   * Check whether a user is a collaborator on the repository.
+   * Returns false on 404 (not a collaborator), re-throws other errors.
+   */
+  async isCollaborator(ref: PRRef, username: string): Promise<boolean> {
+    try {
+      await this.client.rest.repos.getCollaboratorPermissionLevel({
+        owner: ref.owner,
+        repo: ref.repo,
+        username,
+      });
+      return true;
+    } catch (err) {
+      if (getErrorStatus(err) === 404) {
+        return false;
+      }
+      throw err;
+    }
   }
 }

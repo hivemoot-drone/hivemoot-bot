@@ -14,6 +14,7 @@ import {
   getOpenPRsForIssue,
   evaluateMergeReadiness,
   evaluateAutomerge,
+  requestTrustedReviewers,
 } from "../../lib/index.js";
 import {
   getLinkedIssues,
@@ -380,6 +381,22 @@ export function app(probotApp: Probot): void {
           log: context.log,
           graphql: context.octokit,
         });
+
+        if (repoConfig.governance.pr.reviewRequests) {
+          await requestTrustedReviewers({
+            prs,
+            ref: prRef,
+            pr: {
+              author: context.payload.pull_request.user.login,
+              headSha: context.payload.pull_request.head.sha,
+              draft: false,
+              state: context.payload.pull_request.state,
+              labels: currentLabels ?? [],
+            },
+            prConfig: repoConfig.governance.pr,
+            log: context.log,
+          });
+        }
       }
     } catch (error) {
       context.log.error({ err: error, pr: number, repo: fullName }, "Failed to process ready_for_review");
@@ -836,16 +853,33 @@ export function app(probotApp: Probot): void {
         const currentLabels = context.payload.pull_request.labels?.map(
           (l: { name: string }) => l.name
         );
+        const prRef = { owner, repo, prNumber: number };
 
         await evaluateMergeReadiness({
           prs,
-          ref: { owner, repo, prNumber: number },
+          ref: prRef,
           config: repoConfig.governance.pr.mergeReady,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
           currentLabels,
           draft: context.payload.pull_request.draft,
           log: context.log,
         });
+
+        if (context.payload.action === "labeled" && repoConfig.governance.pr.reviewRequests) {
+          await requestTrustedReviewers({
+            prs,
+            ref: prRef,
+            pr: {
+              author: context.payload.pull_request.user.login,
+              headSha: context.payload.pull_request.head.sha,
+              draft: context.payload.pull_request.draft,
+              state: context.payload.pull_request.state,
+              labels: currentLabels ?? [],
+            },
+            prConfig: repoConfig.governance.pr,
+            log: context.log,
+          });
+        }
       }
     } catch (error) {
       context.log.error({ err: error, pr: number, repo: fullName }, "Failed to evaluate merge-readiness after label change");
@@ -911,6 +945,22 @@ export function app(probotApp: Probot): void {
             log: context.log,
             graphql: context.octokit,
           });
+          if (repoConfig.governance.pr.reviewRequests) {
+            const prState = await prs.get(prRef);
+            await requestTrustedReviewers({
+              prs,
+              ref: prRef,
+              pr: {
+                author: prState.author,
+                headSha,
+                draft: prState.draft,
+                state: prState.state,
+                labels: await prs.getLabels(prRef),
+              },
+              prConfig: repoConfig.governance.pr,
+              log: context.log,
+            });
+          }
         } catch (error) {
           context.log.error({ err: error, pr: pr.number, repo: fullName }, "Failed to evaluate merge-readiness after check_suite");
           errors.push(error as Error);
@@ -1007,6 +1057,22 @@ export function app(probotApp: Probot): void {
               appId,
               log: context.log,
             }, headSha);
+          }
+          if (repoConfig.governance.pr.reviewRequests) {
+            const prState = await prs.get(prRef);
+            await requestTrustedReviewers({
+              prs,
+              ref: prRef,
+              pr: {
+                author: prState.author,
+                headSha,
+                draft: prState.draft,
+                state: prState.state,
+                labels: currentLabels,
+              },
+              prConfig: repoConfig.governance.pr,
+              log: context.log,
+            });
           }
         } catch (error) {
           context.log.error({ err: error, pr: pr.number, repo: fullName }, "Failed to evaluate merge-readiness after check_run");

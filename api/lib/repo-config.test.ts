@@ -2922,4 +2922,76 @@ governance:
       });
     });
   });
+
+  describe("reviewRequests parsing", () => {
+    it("should default to null when reviewRequests is not configured", async () => {
+      const configYaml = `
+governance:
+  pr:
+    staleDays: 5
+`;
+      const octokit = createMockOctokit({
+        data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+      });
+      const config = await loadRepositoryConfig(octokit, "owner", "repo");
+      expect(config.governance.pr.reviewRequests).toBeNull();
+    });
+
+    it("should parse reviewRequests with count", async () => {
+      const configYaml = `
+governance:
+  pr:
+    trustedReviewers:
+      - alice
+      - bob
+    reviewRequests:
+      count: 3
+`;
+      const octokit = createMockOctokit({
+        data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+      });
+      const config = await loadRepositoryConfig(octokit, "owner", "repo");
+      expect(config.governance.pr.reviewRequests).toEqual({ count: 3 });
+    });
+
+    it("should default count to 2 when not specified", async () => {
+      const configYaml = `
+governance:
+  pr:
+    reviewRequests: {}
+`;
+      const octokit = createMockOctokit({
+        data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+      });
+      const config = await loadRepositoryConfig(octokit, "owner", "repo");
+      expect(config.governance.pr.reviewRequests).toEqual({ count: CONFIG_BOUNDS.reviewRequests.count.default });
+    });
+
+    it("should clamp count to max", async () => {
+      const configYaml = `
+governance:
+  pr:
+    reviewRequests:
+      count: 999
+`;
+      const octokit = createMockOctokit({
+        data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+      });
+      const config = await loadRepositoryConfig(octokit, "owner", "repo");
+      expect(config.governance.pr.reviewRequests?.count).toBe(CONFIG_BOUNDS.reviewRequests.count.max);
+    });
+
+    it("should return null when reviewRequests is not an object", async () => {
+      const configYaml = `
+governance:
+  pr:
+    reviewRequests: "invalid"
+`;
+      const octokit = createMockOctokit({
+        data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+      });
+      const config = await loadRepositoryConfig(octokit, "owner", "repo");
+      expect(config.governance.pr.reviewRequests).toBeNull();
+    });
+  });
 });
