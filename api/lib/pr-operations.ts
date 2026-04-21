@@ -99,6 +99,23 @@ export interface PRClient {
           status: string;
         }>;
       }>;
+
+      requestReviewers: (params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+        reviewers: string[];
+      }) => Promise<unknown>;
+
+      listRequestedReviewers: (params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+      }) => Promise<{
+        data: {
+          users: Array<{ login: string }>;
+        };
+      }>;
     };
     issues: {
       get: (params: {
@@ -831,5 +848,53 @@ export class PROperations {
     }
 
     return false;
+  }
+
+  /**
+   * Request reviews from trusted reviewers not already requested or identical to the PR author.
+   *
+   * Selects up to `count` reviewers from `trustedReviewers`, excluding the PR author and
+   * reviewers already in the requested-reviewers list. Selection order follows the order
+   * of `trustedReviewers` in config (first N eligible).
+   *
+   * Returns the list of logins actually requested. Returns an empty array when all
+   * eligible reviewers are already requested or no candidates remain after filtering.
+   */
+  async requestTrustedReviewers(
+    ref: PRRef,
+    author: string,
+    trustedReviewers: string[],
+    count: number
+  ): Promise<{ requested: string[] }> {
+    const { data } = await this.client.rest.pulls.listRequestedReviewers({
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.prNumber,
+    });
+
+    const alreadyRequested = new Set(
+      data.users.map((u) => u.login.toLowerCase())
+    );
+
+    const candidates = trustedReviewers.filter(
+      (r) =>
+        r.toLowerCase() !== author.toLowerCase() &&
+        !alreadyRequested.has(r.toLowerCase())
+    );
+
+    if (candidates.length === 0) {
+      return { requested: [] };
+    }
+
+    const toRequest = candidates.slice(0, count);
+
+    await this.client.rest.pulls.requestReviewers({
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.prNumber,
+      reviewers: toRequest,
+    });
+
+    return { requested: toRequest };
   }
 }

@@ -165,6 +165,7 @@ export interface RepoConfigFile {
       intake?: unknown;
       mergeReady?: unknown;
       automerge?: unknown;
+      reviewRequests?: unknown;
     };
   };
   standup?: {
@@ -177,6 +178,10 @@ export interface RepoConfigFile {
  * PR workflow configuration when explicitly enabled.
  * Present only when the `pr:` section exists in the config file.
  */
+export interface ReviewRequestsConfig {
+  count: number;
+}
+
 export interface PRConfig {
   /** Null unless `governance.pr.staleDays` is explicitly present in YAML. */
   staleDays: number | null;
@@ -185,6 +190,7 @@ export interface PRConfig {
   intake: IntakeMethod[];
   mergeReady: MergeReadyConfig | null;
   automerge: AutomergeConfig | null;
+  reviewRequests: ReviewRequestsConfig | null;
 }
 
 /**
@@ -1257,6 +1263,49 @@ function parseAutomergeConfig(
 }
 
 /**
+ * Parse and validate reviewRequests config.
+ * Opt-in — null when absent or when trustedReviewers is empty.
+ * count is clamped to [1, min(CONFIG_BOUNDS.reviewRequests.count.max, trustedReviewers.length)].
+ */
+function parseReviewRequestsConfig(
+  value: unknown,
+  trustedReviewers: string[],
+  repoFullName: string
+): ReviewRequestsConfig | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    logger.warn(
+      `[${repoFullName}] Invalid reviewRequests: expected object. Disabling.`
+    );
+    return null;
+  }
+
+  if (trustedReviewers.length === 0) {
+    logger.warn(
+      `[${repoFullName}] reviewRequests configured but trustedReviewers is empty. Disabling.`
+    );
+    return null;
+  }
+
+  const obj = value as { count?: unknown };
+  const maxCount = Math.min(
+    CONFIG_BOUNDS.reviewRequests.count.max,
+    trustedReviewers.length
+  );
+  const count = parseIntValue(
+    obj.count,
+    { min: 1, max: maxCount, default: CONFIG_BOUNDS.reviewRequests.count.default },
+    "pr.reviewRequests.count",
+    repoFullName
+  );
+
+  return { count };
+}
+
+/**
  * Parse and validate standup config.
  * Opt-in feature — disabled by default.
  * When enabled, `category` is required — there is no default.
@@ -1356,6 +1405,7 @@ function parseRepoConfig(raw: unknown, repoFullName: string): EffectiveConfig {
     const intake = parseIntakeMethods(prConfigRaw?.intake, trustedReviewers, repoFullName);
     const mergeReady = parseMergeReadyConfig(prConfigRaw?.mergeReady, trustedReviewers, repoFullName);
     const automerge = parseAutomergeConfig(prConfigRaw?.automerge, trustedReviewers, repoFullName);
+    const reviewRequests = parseReviewRequestsConfig(prConfigRaw?.reviewRequests, trustedReviewers, repoFullName);
     pr = {
       // Stale PR cleanup is opt-in per repo: omit staleDays (or set it to null) to disable it.
       staleDays:
@@ -1367,6 +1417,7 @@ function parseRepoConfig(raw: unknown, repoFullName: string): EffectiveConfig {
       intake,
       mergeReady,
       automerge,
+      reviewRequests,
     };
   }
 

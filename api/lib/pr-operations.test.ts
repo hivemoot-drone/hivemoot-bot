@@ -29,6 +29,8 @@ describe("createPROperations", () => {
         listCommits: vi.fn(),
         listReviewComments: vi.fn(),
         listFiles: vi.fn(),
+        requestReviewers: vi.fn(),
+        listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
       },
       issues: {
         get: vi.fn(),
@@ -240,6 +242,8 @@ describe("PROperations", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
         },
         issues: {
           get: vi.fn().mockResolvedValue({ data: { labels: [] } }),
@@ -1383,6 +1387,121 @@ describe("PROperations", () => {
 
       expect(result).toEqual([]);
       expect(mockClient.rest.pulls.listFiles).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("requestTrustedReviewers", () => {
+    it("should request eligible trusted reviewers", async () => {
+      vi.mocked(mockClient.rest.pulls.listRequestedReviewers).mockResolvedValue({
+        data: { users: [] },
+      });
+
+      const result = await prOps.requestTrustedReviewers(
+        testRef,
+        "author",
+        ["reviewer-a", "reviewer-b", "reviewer-c"],
+        2
+      );
+
+      expect(result.requested).toEqual(["reviewer-a", "reviewer-b"]);
+      expect(mockClient.rest.pulls.requestReviewers).toHaveBeenCalledWith({
+        owner: testRef.owner,
+        repo: testRef.repo,
+        pull_number: testRef.prNumber,
+        reviewers: ["reviewer-a", "reviewer-b"],
+      });
+    });
+
+    it("should exclude the PR author from candidates", async () => {
+      vi.mocked(mockClient.rest.pulls.listRequestedReviewers).mockResolvedValue({
+        data: { users: [] },
+      });
+
+      const result = await prOps.requestTrustedReviewers(
+        testRef,
+        "reviewer-a",
+        ["reviewer-a", "reviewer-b"],
+        2
+      );
+
+      expect(result.requested).toEqual(["reviewer-b"]);
+    });
+
+    it("should skip reviewers already requested", async () => {
+      vi.mocked(mockClient.rest.pulls.listRequestedReviewers).mockResolvedValue({
+        data: { users: [{ login: "reviewer-a" }] },
+      });
+
+      const result = await prOps.requestTrustedReviewers(
+        testRef,
+        "author",
+        ["reviewer-a", "reviewer-b"],
+        2
+      );
+
+      expect(result.requested).toEqual(["reviewer-b"]);
+    });
+
+    it("should return empty array when all trusted reviewers are already requested", async () => {
+      vi.mocked(mockClient.rest.pulls.listRequestedReviewers).mockResolvedValue({
+        data: { users: [{ login: "reviewer-a" }, { login: "reviewer-b" }] },
+      });
+
+      const result = await prOps.requestTrustedReviewers(
+        testRef,
+        "author",
+        ["reviewer-a", "reviewer-b"],
+        2
+      );
+
+      expect(result.requested).toEqual([]);
+      expect(mockClient.rest.pulls.requestReviewers).not.toHaveBeenCalled();
+    });
+
+    it("should return empty array when only the author is in trustedReviewers", async () => {
+      vi.mocked(mockClient.rest.pulls.listRequestedReviewers).mockResolvedValue({
+        data: { users: [] },
+      });
+
+      const result = await prOps.requestTrustedReviewers(
+        testRef,
+        "solo-author",
+        ["solo-author"],
+        1
+      );
+
+      expect(result.requested).toEqual([]);
+      expect(mockClient.rest.pulls.requestReviewers).not.toHaveBeenCalled();
+    });
+
+    it("should be case-insensitive when excluding author and already-requested", async () => {
+      vi.mocked(mockClient.rest.pulls.listRequestedReviewers).mockResolvedValue({
+        data: { users: [{ login: "Reviewer-A" }] },
+      });
+
+      const result = await prOps.requestTrustedReviewers(
+        testRef,
+        "AUTHOR",
+        ["author", "reviewer-a", "reviewer-b"],
+        3
+      );
+
+      expect(result.requested).toEqual(["reviewer-b"]);
+    });
+
+    it("should respect count limit", async () => {
+      vi.mocked(mockClient.rest.pulls.listRequestedReviewers).mockResolvedValue({
+        data: { users: [] },
+      });
+
+      const result = await prOps.requestTrustedReviewers(
+        testRef,
+        "author",
+        ["reviewer-a", "reviewer-b", "reviewer-c", "reviewer-d"],
+        2
+      );
+
+      expect(result.requested).toEqual(["reviewer-a", "reviewer-b"]);
     });
   });
 });

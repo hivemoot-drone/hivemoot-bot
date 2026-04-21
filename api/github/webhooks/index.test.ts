@@ -766,6 +766,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
         },
         checks: {
           listForRef: vi.fn().mockResolvedValue({
@@ -1229,6 +1231,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
         },
         issues: {
           get: vi.fn().mockResolvedValue({ data: { reactions: { "+1": 0, "-1": 0, confused: 0 } } }),
@@ -1459,6 +1463,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
         },
         issues: {
           get: vi.fn().mockResolvedValue({ data: { labels: [] } }),
@@ -1618,6 +1624,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
           list: vi.fn().mockResolvedValue({ data: [] }),
         },
         issues: {
@@ -2105,6 +2113,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
           list: vi.fn().mockResolvedValue({ data: [] }),
         },
         issues: {
@@ -2171,6 +2181,19 @@ describe("Queen Bot", () => {
             minApprovals: 0,
             requireChecks: false,
           },
+        },
+      },
+    };
+
+    const reviewRequestsConfig = {
+      governance: {
+        proposals: { discussion: { exits: [{ type: "manual" }], durationMs: 0 } },
+        pr: {
+          maxPRsPerIssue: 3,
+          trustedReviewers: ["reviewer1", "reviewer2"],
+          intake: {},
+          mergeReady: {},
+          reviewRequests: { count: 1 },
         },
       },
     };
@@ -2326,6 +2349,136 @@ describe("Queen Bot", () => {
           graphql: expect.anything(),
         })
       );
+    });
+
+    it("should request reviewers on pull_request.labeled when reviewRequests is configured and PR is not a draft", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(reviewRequestsConfig as any);
+      const octokit = mkOctokit();
+
+      await handlers.get("pull_request.labeled")!({
+        octokit,
+        log: mkLog(),
+        payload: {
+          action: "labeled",
+          label: { name: LABELS.IMPLEMENTATION },
+          pull_request: {
+            number: 1,
+            draft: false,
+            labels: [{ name: LABELS.IMPLEMENTATION }],
+            user: { login: "author" },
+          },
+          repository: testRepo,
+        },
+      });
+
+      expect(octokit.rest.pulls.requestReviewers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          owner: "hivemoot",
+          repo: "test-repo",
+          pull_number: 1,
+          reviewers: expect.any(Array),
+        })
+      );
+    });
+
+    it("should not request reviewers on pull_request.labeled when PR is a draft", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(reviewRequestsConfig as any);
+      const octokit = mkOctokit();
+
+      await handlers.get("pull_request.labeled")!({
+        octokit,
+        log: mkLog(),
+        payload: {
+          action: "labeled",
+          label: { name: LABELS.IMPLEMENTATION },
+          pull_request: {
+            number: 1,
+            draft: true,
+            labels: [{ name: LABELS.IMPLEMENTATION }],
+            user: { login: "author" },
+          },
+          repository: testRepo,
+        },
+      });
+
+      expect(octokit.rest.pulls.requestReviewers).not.toHaveBeenCalled();
+    });
+
+    it("should not request reviewers on pull_request.unlabeled", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(reviewRequestsConfig as any);
+      const octokit = mkOctokit();
+
+      await handlers.get("pull_request.labeled")!({
+        octokit,
+        log: mkLog(),
+        payload: {
+          action: "unlabeled",
+          label: { name: LABELS.IMPLEMENTATION },
+          pull_request: {
+            number: 1,
+            draft: false,
+            labels: [],
+            user: { login: "author" },
+          },
+          repository: testRepo,
+        },
+      });
+
+      expect(octokit.rest.pulls.requestReviewers).not.toHaveBeenCalled();
+    });
+
+    it("should request reviewers on pull_request.ready_for_review when reviewRequests is configured and candidate label is present", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(reviewRequestsConfig as any);
+      const octokit = mkOctokit();
+
+      await handlers.get("pull_request.ready_for_review")!({
+        octokit,
+        log: mkLog(),
+        payload: {
+          pull_request: {
+            number: 2,
+            draft: false,
+            labels: [{ name: LABELS.IMPLEMENTATION }],
+            user: { login: "author" },
+          },
+          repository: testRepo,
+        },
+      });
+
+      expect(octokit.rest.pulls.requestReviewers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          owner: "hivemoot",
+          repo: "test-repo",
+          pull_number: 2,
+          reviewers: expect.any(Array),
+        })
+      );
+    });
+
+    it("should not request reviewers on pull_request.ready_for_review when candidate label is absent", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(reviewRequestsConfig as any);
+      const octokit = mkOctokit();
+
+      await handlers.get("pull_request.ready_for_review")!({
+        octokit,
+        log: mkLog(),
+        payload: {
+          pull_request: {
+            number: 2,
+            draft: false,
+            labels: [],
+            user: { login: "author" },
+          },
+          repository: testRepo,
+        },
+      });
+
+      expect(octokit.rest.pulls.requestReviewers).not.toHaveBeenCalled();
     });
 
     it("should remove merge-ready and automerge labels on pull_request.converted_to_draft", async () => {
@@ -2794,6 +2947,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn(),
           listReviewComments: vi.fn(),
           listFiles: vi.fn(),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
           list: vi.fn(),
         },
         checks: { listForRef: vi.fn() },

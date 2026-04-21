@@ -380,6 +380,23 @@ export function app(probotApp: Probot): void {
           log: context.log,
           graphql: context.octokit,
         });
+
+        // Request reviewers for candidate PRs that transition from draft to ready.
+        if (
+          repoConfig.governance.pr.reviewRequests &&
+          currentLabels?.some((l) => isLabelMatch(l, LABELS.IMPLEMENTATION))
+        ) {
+          const author = (context.payload.pull_request.user as { login: string } | null)?.login ?? "";
+          const result = await prs.requestTrustedReviewers(
+            prRef,
+            author,
+            repoConfig.governance.pr.trustedReviewers,
+            repoConfig.governance.pr.reviewRequests.count
+          );
+          if (result.requested.length > 0) {
+            context.log.info(`[PR #${number}] Requested reviews from: ${result.requested.join(", ")}`);
+          }
+        }
       }
     } catch (error) {
       context.log.error({ err: error, pr: number, repo: fullName }, "Failed to process ready_for_review");
@@ -836,16 +853,35 @@ export function app(probotApp: Probot): void {
         const currentLabels = context.payload.pull_request.labels?.map(
           (l: { name: string }) => l.name
         );
+        const prRef = { owner, repo, prNumber: number };
 
         await evaluateMergeReadiness({
           prs,
-          ref: { owner, repo, prNumber: number },
+          ref: prRef,
           config: repoConfig.governance.pr.mergeReady,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
           currentLabels,
           draft: context.payload.pull_request.draft,
           log: context.log,
         });
+
+        // Request reviewers when hivemoot:candidate is added and the PR is non-draft.
+        if (
+          context.payload.action === "labeled" &&
+          repoConfig.governance.pr.reviewRequests &&
+          !context.payload.pull_request.draft
+        ) {
+          const author = (context.payload.pull_request.user as { login: string } | null)?.login ?? "";
+          const result = await prs.requestTrustedReviewers(
+            prRef,
+            author,
+            repoConfig.governance.pr.trustedReviewers,
+            repoConfig.governance.pr.reviewRequests.count
+          );
+          if (result.requested.length > 0) {
+            context.log.info(`[PR #${number}] Requested reviews from: ${result.requested.join(", ")}`);
+          }
+        }
       }
     } catch (error) {
       context.log.error({ err: error, pr: number, repo: fullName }, "Failed to evaluate merge-readiness after label change");
